@@ -4,6 +4,7 @@ import {
   flush,
   flushMicrotasks,
   TestBed,
+  tick,
   waitForAsync,
 } from "@angular/core/testing";
 import { CoursesModule } from "../courses.module";
@@ -23,6 +24,7 @@ import { async, of } from "rxjs";
 import { NoopAnimationsModule } from "@angular/platform-browser/animations";
 import { click } from "../common/test-utils";
 import { Course } from "../model/course";
+import { delay } from "rxjs/operators";
 
 describe("HomeComponent", () => {
   let fixture: ComponentFixture<HomeComponent>;
@@ -88,7 +90,7 @@ describe("HomeComponent", () => {
     expect(tabs.length).toBe(2, "There should be two tabs");
   });
 
-  it("should display advanced courses when tab clicked", (done: DoneFn) => {
+  it("should display advanced courses when tab clicked (asynchronous task)", (done: DoneFn) => {
     coursesService.findAllCourses.and.returnValue(of(setupCourses()));
     fixture.detectChanges();
 
@@ -101,9 +103,9 @@ describe("HomeComponent", () => {
 
     setTimeout(() => {
       const cardTitles = el.queryAll(By.css(".mat-mdc-card-title"));
-
       console.log(cardTitles);
 
+      // Would be 9 or 12 while the cards are still loading
       typeof expect(cardTitles.length).toBe(
         3,
         "There should be more than one card",
@@ -121,4 +123,81 @@ describe("HomeComponent", () => {
       done();
     }, 500);
   });
+
+  it("should display advanced courses when tab clicked (asynchronous task with async)", fakeAsync(() => {
+    coursesService.findAllCourses.and.returnValue(of(setupCourses()));
+    fixture.detectChanges();
+
+    const tabs = el.queryAll(By.css(".mat-mdc-tab"));
+
+    expect(tabs.length).toBe(2, "There should be two tabs");
+
+    tabs[1].nativeElement.click();
+    fixture.detectChanges();
+
+    // This automatically handles async tasks
+    flush();
+
+    const cardTitles = el.queryAll(By.css(".mat-mdc-card-title"));
+    console.log(cardTitles);
+
+    // Would be 9 or 12 while the cards are still loading
+    typeof expect(cardTitles.length).toBe(
+      3,
+      "There should be more than one card",
+    );
+
+    const selected = el.nativeElement.querySelector(
+      "[role='tab'][aria-selected='true']",
+    );
+
+    expect(selected.textContent).toContain(
+      "Advanced",
+      "Advanced tab should be selected",
+    );
+  }));
+
+  it("asynchronous test with microtask", fakeAsync(() => {
+    let test = false;
+
+    console.log("Creating promise");
+
+    Promise.resolve()
+      .then(() => {
+        console.log("Promise resolved 1");
+        test = true;
+
+        return Promise.resolve();
+      })
+      .then(() => {
+        setTimeout(() => {
+          test = false;
+          console.log("SetTimeout resolved 1");
+        }, 1000);
+
+        console.log("Promise resolved 2");
+      });
+
+    flushMicrotasks();
+
+    expect(test).toBe(true);
+
+    tick(1000);
+
+    expect(test).toBe(false);
+  }));
+
+  it("asynchronous test with observables", fakeAsync(() => {
+    let test = false;
+    const text$ = of("Hello World");
+
+    text$.pipe(delay(200)).subscribe((text) => {
+      test = true;
+      expect(text).toBe("Hello World");
+    });
+
+    tick(1000);
+
+    expect(test).toBe(true);
+  }));
 });
